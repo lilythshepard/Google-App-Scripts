@@ -1,0 +1,212 @@
+const USERS_SHEET = 'Users';
+const RESULTS_SHEET = 'Results';
+
+function doGet() {
+  return HtmlService.createTemplateFromFile('index')
+    .evaluate()
+    .setTitle('Impact Computer Skills Check')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function getAppBootstrap() {
+  const email = getCurrentUserEmail_();
+  const user = getUserByEmail_(email);
+
+  return {
+    email: email || '',
+    firstName: user ? user.first_name : 'there',
+    knownUser: !!user,
+    scenarios: getScenarioConfig_()
+  };
+}
+
+function saveResults(payload) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(RESULTS_SHEET);
+  if (!sheet) throw new Error('Results sheet not found');
+
+  const row = [
+    payload.email || '',
+    payload.firstName || '',
+    payload.results?.q1_windows_settings || '',
+    payload.results?.q2_windows_update_menu || '',
+    payload.results?.q3_windows_check_updates || '',
+    payload.results?.q4_windows_install_updates || '',
+    payload.results?.q5_vantage_system_update || '',
+    payload.results?.q6_vantage_check_updates || '',
+    payload.results?.q7_vantage_install || '',
+    payload.results?.q8_audio_keys || '',
+    payload.results?.q9_manual_device_keys || '',
+    payload.results?.q10_screenshot || '',
+    payload.score || 0,
+    new Date(),
+    JSON.stringify(payload.details || {})
+  ];
+
+  sheet.appendRow(row);
+  return { success: true };
+}
+
+function getCurrentUserEmail_() {
+  try {
+    return Session.getActiveUser().getEmail() || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function getUserByEmail_(email) {
+  if (!email) return null;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USERS_SHEET);
+  if (!sheet) throw new Error('Users sheet not found');
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values.shift();
+
+  const emailIdx = headers.indexOf('email');
+  const firstNameIdx = headers.indexOf('first_name');
+  const activeIdx = headers.indexOf('active');
+
+  for (const row of values) {
+    const rowEmail = String(row[emailIdx] || '').toLowerCase().trim();
+    const rowFirstName = String(row[firstNameIdx] || '').trim();
+    const rowActive = String(row[activeIdx] || '').toUpperCase().trim();
+
+    if (rowEmail === String(email).toLowerCase().trim() && rowActive === 'TRUE') {
+      return {
+        email: row[emailIdx],
+        first_name: rowFirstName
+      };
+    }
+  }
+
+  return null;
+}
+
+function getScenarioConfig_() {
+  return {
+    q1_windows_settings: {
+      title: 'Windows Update - Step 1',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/P52BbFs.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q2_windows_update_menu',
+      instruction: 'Click Settings on your Windows Start Menu (accessed by pressing the Windows Key)',
+      hotspots: [
+        { id: 'settings', x: 7, y: 29, w: 12, h: 10, label: 'Settings', correct: true }
+      ]
+    },
+
+    q2_windows_update_menu: {
+      title: 'Windows Update - Step 2',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/vxuGVIq.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q3_windows_check_updates',
+      instruction: 'On the left-menu, click "Windows Update".',
+      hotspots: [
+        { id: 'windows-update',  x: 2, y: 93, w: 22, h: 5 , label: 'Windows Update', correct: true }
+      ]
+    },
+
+    q3_windows_check_updates: {
+      title: 'Windows Update - Step 3',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/sy0vQOo.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q4_windows_install_updates',
+      instruction: 'Click Check for updates.',
+      hotspots: [
+        { id: 'check-updates', id: 'check-updates', x: 87.5, y: 20.5, w: 11, h: 5, label: 'Check for updates', correct: true }
+      ]
+    },
+
+    q4_windows_install_updates: {
+      title: 'Windows Update - Step 4',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/9UpD9Ax.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q5_vantage_system_update',
+      instruction: 'Click Install updates (or Install All) if needed. You may be instructed to restart your computer to complete update installations, please do so.',
+      hotspots: [
+        { id: 'install-updates', x: 81, y: 13.5, w: 10, h: 6, label: 'Install updates', correct: true }
+      ]
+    },
+
+    q5_vantage_system_update: {
+      title: 'Lenovo Vantage - Step 1',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/2O5IwR0.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q6_vantage_check_updates',
+      instruction: 'Use your Windows Search box to open Lenovo Vantage. Click on the Lenovo Vantage application.',
+      hotspots: [
+        { id: 'lenovo-vantage-search', x: 11.4, y: 15, w: 40, h: 9, label: 'Lenovo Vantage', correct: true }
+      ]
+    },
+
+    q6_vantage_check_updates: {
+      title: 'Lenovo Vantage - Step 2',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/Gn8HwWd.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q7_vantage_install',
+      instruction: 'Once the application is open, click "Check for updates".',
+      hotspots: [
+        { id: 'check-vantage', x: 71.5, y: 19, w: 22, h: 10, label: 'Check for updates', correct: true }
+      ]
+    },
+
+    q7_vantage_install: {
+      title: 'Lenovo Vantage - Step 3',
+      type: 'single-hotspot',
+      image: 'https://i.imgur.com/A8Am528.png',
+      successImage: 'https://i.imgur.com/sLjd8E1.png',
+      nextQuestion: 'q8_audio_keys',
+      instruction: 'Click "Install / Install All" for updates and restart computer if requested.',
+      hotspots: [
+        { id: 'install-all', x: 50.8, y: 84.3, w: 12, h: 7, label: 'Install All', correct: true }
+      ]
+    },
+
+        q8_audio_keys: {
+      title: 'Check speaker controls using the top-row keys',
+      type: 'action-key-check',
+      instruction: 'Press the top-row keys (F1, F2, F3). Make sure your FN-LOCK is not enabled (if ESC key has light, press FN + ESC to turn off FN lock).',
+      requiredKeys: [
+        'AudioVolumeMute',
+        'AudioVolumeDown',
+        'AudioVolumeUp'
+      ],
+      keyLabels: {
+        AudioVolumeMute: 'Mute speaker',
+        AudioVolumeDown: 'Lower volume',
+        AudioVolumeUp: 'Increase volume'
+      }
+    },
+
+    q9_manual_device_keys: {
+      title: 'Check microphone mute and screen brightness keys',
+      type: 'manual-device-check',
+      instruction: 'Now test these top-row keys on your laptop without holding Fn: mute microphone (F4), lower brightness (F5), and increase brightness (F6). Then confirm whether you completed them by checking the boxes below. If you experience an error, please add a note to the text box.',
+      checklist: [
+        'Mute microphone',
+        'Lower brightness',
+        'Increase brightness'
+      ]
+    },
+
+    q10_screenshot: {
+      title: 'Take a screenshot using Windows + Shift + S',
+      type: 'confirmation',
+      instruction: 'Use Windows + Shift + S, then confirm that you completed the action by typing "completed" in the text box.',
+      allowPasteEvidence: true
+      }
+      };
+}
