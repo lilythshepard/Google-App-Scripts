@@ -1,0 +1,190 @@
+const GEMINI_API_KEY = ["INSERT API KEY HERE"];
+
+function onHomepage(e) {
+  return buildUI();
+}
+
+function buildUI() {
+  const card = CardService.newCardBuilder();
+
+  const input = CardService.newTextInput()
+    .setFieldName("inputText")
+    .setTitle("Paste your draft email");
+
+  const tone = CardService.newSelectionInput()
+    .setType(CardService.SelectionInputType.DROPDOWN)
+    .setFieldName("tone")
+    .addItem("Professional", "Professional", true)
+    .addItem("Friendly", "Friendly", false)
+    .addItem("Firm", "Firm", false)
+    .addItem("Warm", "Warm", false)
+    .addItem("Apologetic", "Apologetic", false)
+    .addItem("Urgent", "Urgent", false)
+    .addItem("Encouraging", "Encouraging", false)
+    .addItem("Calm and Reassuring", "Calm and Reassuring", false)
+    .addItem("Direct and Concise", "Direct and Concise", false);
+
+  const rewriteButton = CardService.newTextButton()
+    .setText("Rewrite Email")
+    .setOnClickAction(CardService.newAction().setFunctionName("rewriteEmail"));
+
+  return card
+    .addSection(
+      CardService.newCardSection()
+        .addWidget(input)
+        .addWidget(tone)
+        .addWidget(rewriteButton)
+    )
+    .build();
+}
+
+function rewriteEmail(e) {
+  const input = e.formInput.inputText;
+  const tone = e.formInput.tone;
+
+  if (!input) {
+    logUsage("Rewrite Email", "Missing Input", "");
+    return buildResultCard("Please paste a draft email first.");
+  }
+
+  const prompt = `
+You are helping a school staff member write clear, professional communication.
+
+Rewrite this as a ${tone} school email.
+
+Assumptions:
+- The user is a school staff member
+- The audience could be Parents, Teachers, School Leaders, IT, or Home Office administration
+- If unclear, keep it broadly appropriate
+
+Requirements:
+- Professional and school-appropriate
+- Clear, concise, respectful
+- Do not invent facts
+- Include subject, greeting, and closing
+- Match the selected tone
+
+Draft:
+${input}
+`;
+
+  const output = callGemini(prompt);
+  PropertiesService.getUserProperties().setProperty("LAST_OUTPUT", output);
+
+  logUsage("Rewrite Email", "Success", "Tone: " + tone);
+
+  return buildResultCard(output);
+}
+
+function buildResultCard(output) {
+  const insertButton = CardService.newTextButton()
+    .setText("Insert into Gmail Draft")
+    .setComposeAction(
+      CardService.newAction().setFunctionName("createDraftFromOutput"),
+      CardService.ComposedEmailType.STANDALONE_DRAFT
+    );
+
+  const rewriteButton = CardService.newTextButton()
+    .setText("Rewrite Another Email")
+    .setOnClickAction(CardService.newAction().setFunctionName("onHomepage"));
+
+  return CardService.newCardBuilder()
+    .addSection(
+      CardService.newCardSection()
+        .addWidget(
+          CardService.newTextParagraph().setText(sanitizeForCard(output))
+        )
+        .addWidget(insertButton)
+        .addWidget(rewriteButton)
+    )
+    .build();
+}
+
+function createDraftFromOutput(e) {
+  const output =
+    PropertiesService.getUserProperties().getProperty("LAST_OUTPUT") || "";
+
+  const subjectMatch = output.match(/Subject:\s*(.*)/i);
+  const subject = subjectMatch
+    ? subjectMatch[1].trim()
+    : "School Communication";
+
+  const body = output.replace(/Subject:\s*.*/i, "").trim();
+
+  logUsage("Insert into Gmail Draft", "Success", subject);
+
+  return CardService.newComposeActionResponseBuilder()
+    .setGmailDraft(GmailApp.createDraft("", subject, body))
+    .build();
+}
+
+function logUsage(action, status, details) {
+  const LOG_SHEET_ID = "1JzMiyIkS-XlCbSOzNmSzunK2MQovftoK48g1wI2z-9U";
+
+  try {
+    const ss = SpreadsheetApp.openById(LOG_SHEET_ID);
+    let sheet = ss.getSheetByName("UsageLog");
+
+    if (!sheet) {
+      sheet = ss.insertSheet("UsageLog");
+      sheet.appendRow([
+        "Timestamp",
+        "User Email",
+        "Action",
+        "Status",
+        "Details"
+      ]);
+    }
+
+    sheet.appendRow([
+      new Date(),
+      Session.getActiveUser().getEmail(),
+      action,
+      status,
+      details
+    ]);
+  } catch (err) {
+    console.log("Logging failed: " + err.message);
+  }
+}
+
+function sanitizeForCard(text) {
+  if (!text) return "No response was generated.";
+
+  return text
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+}
+
+function callGemini(prompt) {
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+    GEMINI_API_KEY;
+
+  const payload = {
+    contents: [
+      {
+        parts: [{ text: prompt }]
+      }
+    ]
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const data = JSON.parse(response.getContentText());
+
+  if (!data.candidates || !data.candidates[0]) {
+    return "Error from Gemini: " + response.getContentText();
+  }
+
+  return data.candidates[0].content.parts[0].text;
+}
